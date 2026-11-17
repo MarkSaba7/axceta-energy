@@ -1,0 +1,71 @@
+name: ci-cd
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff pytest -r cloud/api/requirements.txt
+      - run: ruff check .
+      - run: pytest cloud/api
+      - run: docker compose config --quiet  # le compose est valide
+
+  images:
+    needs: test
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        include:
+          - { name: device, context: device }
+          - { name: api, context: cloud/api }
+          - { name: dashboard, context: dashboard }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: reg
+        run: echo "prefix=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          push: true
+          build-args: VERSION=${{ github.sha }}
+          tags: |
+            ${{ steps.reg.outputs.prefix }}/axceta-${{ matrix.name }}:latest
+            ${{ steps.reg.outputs.prefix }}/axceta-${{ matrix.name }}:${{ github.sha }}
+
+  # Déploie la partie cloud sur un serveur (n'importe quelle VM avec Docker).
+  # Ne fait rien tant que les secrets DEPLOY_HOST, DEPLOY_USER et DEPLOY_SSH_KEY ne sont pas définis.
+  deploy:
+    needs: images
+    runs-on: ubuntu-latest
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Déployer cloud/ sur le serveur
+        if: env.DEPLOY_HOST != ''
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan "$DEPLOY_HOST" >> ~/.ssh/known_hosts
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" mkdir -p axceta
+          scp -r cloud/* "$DEPLOY_USER@$DEPLOY_HOST:axceta/"
+          ssh "$DEPLOY_USER@$DEPLOY_HOST" "cd axceta && export REGISTRY=ghcr.io/${GITHUB_REPOSITORY_OWNER,,} TAG=$GITHUB_SHA && docker compose pull api && docker compose up -d"

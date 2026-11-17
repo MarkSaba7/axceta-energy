@@ -1,0 +1,46 @@
+# docker compose up --build  ->  tout tourne en local : cloud (broker + API), dashboard et 3 appareils.
+# Pour utiliser le vrai cloud : voir README, section "Brancher sur le cloud déployé".
+name: axceta-energy
+
+include:
+  - cloud/compose.yml
+
+x-mqtt-env: &mqtt-env
+  MQTT_HOST: ${MQTT_HOST:-mosquitto}
+  MQTT_PORT: ${MQTT_PORT:-1883}
+  MQTT_USERNAME: ${MQTT_USERNAME:-}
+  MQTT_PASSWORD: ${MQTT_PASSWORD:-}
+  MQTT_TLS: ${MQTT_TLS:-0}
+
+x-device: &device
+  image: ${REGISTRY:-local}/axceta-device:${TAG:-latest}
+  build: ./device
+
+services:
+  dashboard:
+    image: ${REGISTRY:-local}/axceta-dashboard:${TAG:-latest}
+    build: ./dashboard
+    ports: ["8080:8080"]
+    environment:
+      <<: *mqtt-env
+      CLOUD_API_URL: ${CLOUD_API_URL:-http://api:8000}
+      API_TOKEN: ${API_TOKEN:-}
+      DEVICE_IMAGE: ${REGISTRY:-local}/axceta-device:${TAG:-latest}
+      DEVICE_NETWORK: axceta-energy_default
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]  # pour créer / couper / retirer des appareils
+
+  # Ajouter un appareil ici = copier un bloc et changer DEVICE_ID / DEVICE_TYPE.
+  lampe-salon:
+    <<: *device
+    environment: { <<: *mqtt-env, DEVICE_ID: lampe-salon, DEVICE_TYPE: lamp }
+    labels: { axceta.device_id: lampe-salon }
+
+  frigo:
+    <<: *device
+    environment: { <<: *mqtt-env, DEVICE_ID: frigo, DEVICE_TYPE: fridge }
+    labels: { axceta.device_id: frigo }
+
+  plinthe-chambre:
+    <<: *device
+    environment: { <<: *mqtt-env, DEVICE_ID: plinthe-chambre, DEVICE_TYPE: heater }
+    labels: { axceta.device_id: plinthe-chambre }

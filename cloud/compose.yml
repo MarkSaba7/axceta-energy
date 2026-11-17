@@ -1,0 +1,21 @@
+# La partie "cloud" : c'est ce fichier (et ce dossier) que la CD déploie sur le serveur.
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2.0.18
+    ports: ["1883:1883"]
+    volumes: ["./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro"]
+    restart: unless-stopped
+
+  api:
+    image: ${REGISTRY:-local}/axceta-api:${TAG:-latest}
+    build: ./api
+    ports: ["8000:8000"]
+    environment:
+      MQTT_HOST: mosquitto
+      DB_PATH: /data/energy.db
+      API_TOKEN: ${API_TOKEN:-}
+    volumes: ["api-data:/data"]
+    restart: unless-stopped
+
+volumes:
+  api-data:
