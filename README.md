@@ -1,4 +1,5 @@
 # Axceta Energy — gestion de la consommation électrique à domicile
+![CI](https://github.com/MarkSaba7/axceta-energy/actions/workflows/ci.yml/badge.svg)
 
 Des appareils IoT simulés (conteneurs Docker) mesurent le courant sur le fil d'une lampe, d'un frigo,
 d'une plinthe… et l'envoient au cloud en MQTT. Le cloud calcule la consommation actuelle, le total du jour
